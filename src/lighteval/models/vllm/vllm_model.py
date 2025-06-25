@@ -306,14 +306,26 @@ class VLLMModel(LightevalModel):
 
             for vllm_output in vllm_outputs:
                 output_token_ids = [outputs.token_ids for outputs in vllm_output.outputs]
-                logprobs = [output.logprobs for output in vllm_output.outputs] or []
-                logprobs = [logprob[token_id].logprob for token_id, logprob in zip(output_token_ids[0], logprobs[0])]
+                raw_logprobs_per_sample = [output.logprobs for output in vllm_output.outputs] or []
+                processed_logprobs = []
+                if returns_logits and raw_logprobs_per_sample:
+                    # For each of the N samples generated...
+                    for i, sample_logprobs in enumerate(raw_logprobs_per_sample):
+                        if not sample_logprobs:
+                            continue
+                        # ...and for each token in that sample...
+                        current_sample_token_logprobs = [
+                            # ...get the logprob of the generated token.
+                            sample_logprobs[j][output_token_ids[i][j]].logprob
+                            for j in range(len(output_token_ids[i]))
+                        ]
+                        processed_logprobs.append(current_sample_token_logprobs)
                 result = [output.text for output in vllm_output.outputs]
                 input_token_ids = vllm_output.prompt_token_ids
 
                 cur_response = GenerativeResponse(
                     result=result,
-                    logits=logprobs,
+                    logits=processed_logprobs,
                     generated_tokens=list(output_token_ids),
                     input_tokens=input_token_ids,
                 )
@@ -567,14 +579,26 @@ class AsyncVLLMModel(VLLMModel):
 
         for response in responses:
             output_token_ids = [outputs.token_ids for outputs in response.outputs]
-            full_logprobs = [output.logprobs for output in response.outputs] or []
-            logprobs = [logprob[token_id].logprob for token_id, logprob in zip(output_token_ids[0], full_logprobs[0])]
+            raw_logprobs_per_sample = [output.logprobs for output in response.outputs] or []
+            processed_logprobs = []
+            if raw_logprobs_per_sample:
+                # For each of the N samples generated...
+                for i, sample_logprobs in enumerate(raw_logprobs_per_sample):
+                    if not sample_logprobs:
+                        continue
+                    # ...and for each token in that sample...
+                    current_sample_token_logprobs = [
+                        # ...get the logprob of the generated token.
+                        sample_logprobs[j][output_token_ids[i][j]].logprob
+                        for j in range(len(output_token_ids[i]))
+                    ]
+                    processed_logprobs.append(current_sample_token_logprobs)
             result = [output.text for output in response.outputs]
             input_token_ids = response.prompt_token_ids
 
             cur_response = GenerativeResponse(
                 result=result,
-                logits=logprobs,
+                logits=processed_logprobs,
                 generated_tokens=list(output_token_ids),
                 input_tokens=input_token_ids,
             )
