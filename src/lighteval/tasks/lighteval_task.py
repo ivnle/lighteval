@@ -109,6 +109,7 @@ class LightevalTaskConfig:
     # Generation args
     generation_size: Optional[int] = None
     generation_grammar: Optional[TextGenerationInputGrammarType] = None
+    guided_decoding: Optional[dict] = None
     stop_sequence: Optional[ListLike[str]] = None
     num_samples: Optional[list[int]] = None
 
@@ -221,6 +222,7 @@ class LightevalTask:
 
         self.generation_size = cfg.generation_size
         self.generation_grammar = cfg.generation_grammar
+        self.guided_decoding = cfg.guided_decoding
         self.stop_sequence = cfg.stop_sequence
         self.must_remove_duplicate_docs = cfg.must_remove_duplicate_docs
 
@@ -392,6 +394,7 @@ class LightevalTask:
                     stop_sequence=self.stop_sequence,
                     generation_size=self.generation_size,
                     generation_grammar=self.generation_grammar,
+                    guided_decoding=self.guided_decoding,
                     num_samples=max(self.num_samples),
                     do_sample=True,
                     use_logits=False,
@@ -413,6 +416,7 @@ class LightevalTask:
                     stop_sequence=self.stop_sequence,
                     generation_size=self.generation_size,
                     generation_grammar=self.generation_grammar,
+                    guided_decoding=self.guided_decoding,
                     num_samples=1,
                     use_logits=use_logits,
                     metric_categories=[
@@ -498,6 +502,7 @@ class LightevalTask:
                     stop_sequence=self.stop_sequence,
                     generation_size=self.generation_size,
                     generation_grammar=self.generation_grammar,
+                    guided_decoding=self.guided_decoding,
                     num_samples=1,
                     metric_categories=[MetricCategory.LLM_AS_JUDGE],
                     images=formatted_doc.images,

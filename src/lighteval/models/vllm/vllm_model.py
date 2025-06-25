@@ -261,6 +261,7 @@ class VLLMModel(LightevalModel):
             max_new_tokens = self._config.generation_parameters.max_new_tokens or split[0].generation_size
             returns_logits = split[0].use_logits
             num_samples = split[0].num_samples
+            guided_decoding_params = split[0].guided_decoding
 
             context = [sample.context for sample in split]
             tokenized = self.tokenizer(context, add_special_tokens=self.add_special_tokens)
@@ -300,6 +301,7 @@ class VLLMModel(LightevalModel):
                 stop_tokens=stop_tokens,
                 returns_logits=returns_logits,
                 num_samples=num_samples,
+                guided_decoding=guided_decoding_params,
             )
 
             for vllm_output in vllm_outputs:
@@ -327,6 +329,7 @@ class VLLMModel(LightevalModel):
         returns_logits: Optional[bool] = False,
         num_samples: int = 1,
         generate: bool = True,
+        guided_decoding: Optional[dict] = None,
     ) -> list[GenerativeResponse]:
         """Contains the actual logic of the generation."""
         sampling_params = SamplingParams(**self._config.generation_parameters.to_vllm_dict())
@@ -336,6 +339,14 @@ class VLLMModel(LightevalModel):
             sampling_params.max_tokens = max_new_tokens
             sampling_params.stop = stop_tokens
             sampling_params.logprobs = 1 if returns_logits else 0
+            if guided_decoding:
+                try:
+                    from vllm.sampling_params import GuidedDecodingParams
+
+                    sampling_params.guided_decoding = GuidedDecodingParams(**guided_decoding)
+                except (ImportError, TypeError) as e:
+                    logger.error(f"Could not apply guided decoding with params {guided_decoding}. Error: {e}")
+                    raise e
 
         else:
             sampling_params.temperature = 0
@@ -506,6 +517,15 @@ class AsyncVLLMModel(VLLMModel):
             sampling_params.logprobs = int(request.use_logits)
             prompt = request.context
             index = f"generative_{index}"
+
+            if request.guided_decoding:
+                try:
+                    from vllm.sampling_params import GuidedDecodingParams
+
+                    sampling_params.guided_decoding = GuidedDecodingParams(**request.guided_decoding)
+                except (ImportError, TypeError) as e:
+                    logger.error(f"Could not apply guided decoding with params {request.guided_decoding}. Error: {e}")
+                    raise e
 
         generator = self.model.generate(request_id=str(index), prompt=prompt, sampling_params=sampling_params)
         try:

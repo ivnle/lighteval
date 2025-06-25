@@ -130,6 +130,7 @@ class GreedyUntilRequest(Request):
     stop_sequence: Union[str, tuple[str], list[str]]
     generation_size: Union[int, None]
     generation_grammar: Union[TextGenerationInputGrammarType, None] = None
+    guided_decoding: Optional[dict] = None
     request_type = RequestType.GREEDY_UNTIL
     tokenized_context: list[int] = None
     num_samples: int = None
