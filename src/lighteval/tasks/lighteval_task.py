@@ -33,6 +33,7 @@ from multiprocess import Pool
 from pytablewriter import MarkdownTableWriter
 
 from lighteval.metrics import (
+    apply_generative_best_of_n_metric,
     apply_generative_metric,
     apply_llm_as_judge_metric,
     apply_multichoice_metric,
@@ -402,6 +403,24 @@ class LightevalTask:
                     images=formatted_doc.images,
                 )
             ]
+        if self.has_metric_category[MetricCategory.GENERATIVE_BEST_OF_N]:
+            requests[RequestType.GREEDY_UNTIL] += [
+                GreedyUntilRequest(
+                    task_name=current_task_name,
+                    sample_index=document_id_seed,
+                    request_index=0,
+                    context=context,
+                    stop_sequence=self.stop_sequence,
+                    generation_size=self.generation_size,
+                    generation_grammar=self.generation_grammar,
+                    guided_decoding=self.guided_decoding,
+                    num_samples=max(self.num_samples),
+                    do_sample=True,
+                    use_logits=True,  # We need logprobs for scoring
+                    metric_categories=[MetricCategory.GENERATIVE_BEST_OF_N],
+                    images=formatted_doc.images,
+                )
+            ]
         if (
             self.has_metric_category[MetricCategory.GENERATIVE]
             or self.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]
@@ -527,6 +546,8 @@ class LightevalTask:
             return apply_multichoice_metric_one_token
         if metric_category == MetricCategory.PERPLEXITY:
             return apply_perplexity_metric
+        if metric_category == MetricCategory.GENERATIVE_BEST_OF_N:
+            return apply_generative_best_of_n_metric
         if metric_category in [
             MetricCategory.GENERATIVE,
             MetricCategory.GENERATIVE_SAMPLING,

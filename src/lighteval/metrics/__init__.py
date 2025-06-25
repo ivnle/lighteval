@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import numpy as np
 
 from lighteval.metrics.metrics import Metric, MetricCategory
 from lighteval.models.model_output import ModelResponse
@@ -78,6 +79,55 @@ def apply_perplexity_metric(
             if metric.category == MetricCategory.PERPLEXITY:
                 output.update(metric.compute(logprobs=[results.result], reference_texts=[reference_text]))
 
+        outputs.append(output)
+
+    return outputs
+
+
+def apply_generative_best_of_n_metric(
+    sample_ids: list[str],
+    responses: list[list[ModelResponse]],
+    formatted_docs: list[Doc],
+    metrics: list[Metric],
+):
+    outputs = []
+
+    for sample_id, results, formatted_doc in zip(sample_ids, responses, formatted_docs):
+        output = {}
+
+        # Extracting gold
+        try:
+            golds = formatted_doc.get_golds()
+        except (KeyError, IndexError):
+            golds = None
+
+        if len(results) > 1:
+            raise Exception("You returned more than one result for a sample with a best-of-N metric.")
+        results = results[0]
+
+        # Post processing prediction
+        preds_raw = as_list(results.result)
+        logprobs_raw = results.logits
+
+        if not logprobs_raw or len(preds_raw) != len(logprobs_raw):
+            raise ValueError("Logprobs are required for best-of-N metric and must match the number of predictions.")
+
+        # Calculate cumulative log probability for each prediction
+        cumulative_logprobs = [sum(lp) for lp in logprobs_raw]
+        # Find the index of the prediction with the highest cumulative log probability
+        best_sample_index = np.argmax(cumulative_logprobs)
+        # Select the single best prediction
+        best_prediction = [preds_raw[best_sample_index]]
+
+        for metric in metrics:
+            if metric.category == MetricCategory.GENERATIVE_BEST_OF_N:
+                output.update(
+                    metric.compute(
+                        golds=golds,
+                        predictions=best_prediction,
+                        formatted_doc=formatted_doc,
+                    )
+                )
         outputs.append(output)
 
     return outputs

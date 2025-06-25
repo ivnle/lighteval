@@ -30,6 +30,7 @@ class MetricCategory(str, Enum):
     GENERATIVE = auto()
     GENERATIVE_LOGPROB = auto()
     GENERATIVE_SAMPLING = auto()
+    GENERATIVE_BEST_OF_N = auto()
     LLM_AS_JUDGE_MULTI_TURN = auto()
     LLM_AS_JUDGE = auto()
     MULTICHOICE = auto()
