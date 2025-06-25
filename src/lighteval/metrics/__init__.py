@@ -108,26 +108,52 @@ def apply_generative_best_of_n_metric(
         # Post processing prediction
         preds_raw = as_list(results.result)
         logprobs_raw = results.logits
+        generated_tokens = results.generated_tokens
 
         if not logprobs_raw or len(preds_raw) != len(logprobs_raw):
             raise ValueError("Logprobs are required for best-of-N metric and must match the number of predictions.")
+        if not generated_tokens or len(preds_raw) != len(generated_tokens):
+            raise ValueError(
+                "Generated tokens are required for best-of-N metric and must match the number of predictions."
+            )
 
-        # Calculate cumulative log probability for each prediction
-        cumulative_logprobs = [sum(lp) for lp in logprobs_raw]
-        # Find the index of the prediction with the highest cumulative log probability
-        best_sample_index = np.argmax(cumulative_logprobs)
+        # Calculate average log probability for each prediction
+        avg_logprobs = []
+        for i, logprobs in enumerate(logprobs_raw):
+            num_tokens = len(generated_tokens[i])
+            if num_tokens == 0:
+                avg_logprobs.append(float("-inf"))
+            else:
+                avg_logprobs.append(sum(logprobs) / num_tokens)
+
+        # Find the index of the prediction with the highest average log probability
+        best_sample_index = np.argmax(avg_logprobs)
         # Select the single best prediction
-        best_prediction = [preds_raw[best_sample_index]]
+        best_prediction_text = preds_raw[best_sample_index]
+
+        # Create summary statistics for the scores
+        summary_stats = {
+            "best_avg_logprob": avg_logprobs[best_sample_index],
+            "mean_avg_logprob": float(np.mean(avg_logprobs)),
+            "std_avg_logprob": float(np.std(avg_logprobs)),
+            "min_avg_logprob": float(np.min(avg_logprobs)),
+            "num_samples": len(avg_logprobs),
+        }
 
         for metric in metrics:
             if metric.category == MetricCategory.GENERATIVE_BEST_OF_N:
                 output.update(
                     metric.compute(
                         golds=golds,
-                        predictions=best_prediction,
+                        predictions=[best_prediction_text],
                         formatted_doc=formatted_doc,
                     )
                 )
+
+        # Add metadata for the logger
+        output["prediction"] = best_prediction_text
+        output["best_of_n_scores"] = summary_stats
+
         outputs.append(output)
 
     return outputs

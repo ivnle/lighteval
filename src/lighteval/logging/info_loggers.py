@@ -190,6 +190,7 @@ class DetailsLogger:
             padded (list): Size of the padding (if it was needed for the current example)
             gold (list): Example gold targets (for generative evaluations)
             pred_logits (list): List of the actual model predicted logits
+            best_of_n_scores (dict): Summary statistics for best-of-N scoring.
             choices (list): List of the possible choices (for multichoice/loglikelihood evaluations)
             gold_index (list): Indices of the gold targets among the [`choices`]
             metrics (dict): Metric name to current example score
@@ -209,6 +210,7 @@ class DetailsLogger:
         padded: list = field(default_factory=list)
         gold: list = field(default_factory=list)
         pred_logits: list = field(default_factory=list)
+        best_of_n_scores: dict = field(default_factory=dict)
         choices: list = field(default_factory=list)
         gold_index: list = field(default_factory=list)
         metrics: dict = field(default_factory=dict)
@@ -369,7 +371,9 @@ class DetailsLogger:
             pred_saved = True
         if task.has_metric_category[MetricCategory.GENERATIVE_BEST_OF_N]:
             detail.gold = doc.get_golds()
-            detail.pred_logits = [o.logits for o in outputs]
+            # The `metrics` dict contains our special keys. We pop them so they don't get saved twice.
+            detail.predictions = [metrics.pop("prediction", "")]  # Override with just the chosen one
+            detail.best_of_n_scores = metrics.pop("best_of_n_scores", {})
             pred_saved = True
         if task.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]:
             detail.gold = doc.get_golds()
