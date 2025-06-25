@@ -145,6 +145,32 @@ class ExactMatches:
         return 1 if gold == pred else 0
 
 
+class MathCorrectness:
+    def __init__(
+        self,
+        normalize_gold: Callable[[str], list[str]],
+        normalize_pred: Callable[[str], list[str]],
+        sample_scoring_function: Callable[[list[str], list[str], Doc], float],
+    ):
+        """A class to check for mathematical correctness using extraction and a custom scoring function."""
+        self.normalize_gold = normalize_gold
+        self.normalize_pred = normalize_pred
+        self.sample_scoring_function = sample_scoring_function
+
+    def compute(self, golds: list[str], predictions: list[str], formatted_doc: Doc, **kwargs) -> float:
+        """
+        Computes the math correctness for a single prediction chosen by the best-of-N logic.
+        """
+        if len(golds) > 1 or len(predictions) > 1:
+            logger.warning("MathCorrectness received more than one gold or prediction, using only the first of each.")
+
+        # The normalizers return a list of possible extractions. The scoring function handles this.
+        gold_normalized = self.normalize_gold(golds[0])
+        pred_normalized = self.normalize_pred(predictions[0])
+
+        return self.sample_scoring_function(pred_normalized, gold_normalized, formatted_doc)
+
+
 class F1_score:
     def __init__(
         self,

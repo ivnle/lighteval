@@ -54,6 +54,7 @@ from lighteval.metrics.metrics_sample import (
     JudgeLLMSimpleQA,
     LoglikelihoodAcc,
     MajAtK,
+    MathCorrectness,
     PassAtK,
     Recall,
     StringDistance,
@@ -375,6 +376,33 @@ class Metrics(Enum):
         ).compute,
         category=MetricCategory.GENERATIVE_SAMPLING,
         use_case=MetricUseCase.MATH,
+        corpus_level_fn=np.mean,
+        higher_is_better=True,
+    )
+    math_best_of_4_acc = SampleLevelMetric(
+        metric_name="math_best_of_acc:4_samples",
+        sample_level_fn=MathCorrectness(
+            # The following logic is copied directly from math_pass_at_1_4n
+            normalize_gold=lambda k: extract_target_from_pred(
+                k,
+                get_extraction_regexes(
+                    formatted_doc=None,
+                    target_types=[ExprExtractionConfig(), LatexExtractionConfig()],
+                    language=Language.ENGLISH,
+                ),
+            ),
+            normalize_pred=lambda k: extract_target_from_pred(
+                k,
+                get_extraction_regexes(
+                    formatted_doc=None,
+                    target_types=[ExprExtractionConfig(), LatexExtractionConfig()],
+                    language=Language.ENGLISH,
+                ),
+            ),
+            sample_scoring_function=compare_gold_target,
+        ).compute,
+        category=MetricCategory.GENERATIVE_BEST_OF_N,
+        use_case=MetricUseCase.REASONING,
         corpus_level_fn=np.mean,
         higher_is_better=True,
     )
