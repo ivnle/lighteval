@@ -161,8 +161,13 @@ class PromptManager:
         contexts = []
         offset = 2 if system_prompt is not None else 1
         for i in range(0, len(role_content_list), offset + 1):
+            chat_template_kwargs = getattr(self.model._config, "chat_template_kwargs", None) or {}
             c = self.model.tokenizer.apply_chat_template(
-                role_content_list[: i + offset], add_generation_prompt=True, tokenize=False, add_special_tokens=False
+                role_content_list[: i + offset],
+                add_generation_prompt=True,
+                tokenize=False,
+                add_special_tokens=False,
+                **chat_template_kwargs,
             )
             contexts.append(c)
 
@@ -249,9 +254,13 @@ class PromptManager:
             return output, num_effective_fewshots
 
         elif use_chat_template:
-            return self.model.tokenizer.apply_chat_template(
-                output, tokenize=False, add_generation_prompt=True
-            ), num_effective_fewshots
+            chat_template_kwargs = getattr(self.model._config, "chat_template_kwargs", None) or {}
+            return (
+                self.model.tokenizer.apply_chat_template(
+                    output, tokenize=False, add_generation_prompt=True, **chat_template_kwargs
+                ),
+                num_effective_fewshots,
+            )
 
         return output, num_effective_fewshots
 

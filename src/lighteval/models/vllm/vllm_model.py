@@ -96,6 +96,7 @@ class VLLMModelConfig(ModelConfig):
     seed: NonNegativeInt = 1234
     trust_remote_code: bool = False
     use_chat_template: bool = False
+    chat_template_kwargs: dict | None = None
     add_special_tokens: bool = True
     multichoice_continuations_start_space: bool = (
         True  # whether to add a space at the start of each continuation in multichoice generation
