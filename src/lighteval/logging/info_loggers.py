@@ -367,6 +367,10 @@ class DetailsLogger:
         ):
             detail.gold = doc.get_golds()
             pred_saved = True
+        if task.has_metric_category[MetricCategory.GENERATIVE_BEST_OF_N]:
+            detail.gold = doc.get_golds()
+            detail.pred_logits = [o.logits for o in outputs]
+            pred_saved = True
         if task.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]:
             detail.gold = doc.get_golds()
             detail.pred_logits = [o.logits for o in outputs]
