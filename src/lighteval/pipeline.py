@@ -529,12 +529,16 @@ class Pipeline:
                 metric_function = task.get_metric_method_from_category(metric_category=metric_category)
                 metric_category_metrics = [metric for metric in task.metrics if metric.category == metric_category]
 
-                outputs = metric_function(
-                    sample_ids=sample_ids,
-                    responses=responses,
-                    formatted_docs=docs,
-                    metrics=metric_category_metrics,
-                )
+                metric_fn_args = {
+                    "sample_ids": sample_ids,
+                    "responses": responses,
+                    "formatted_docs": docs,
+                    "metrics": metric_category_metrics,
+                }
+                if metric_category == MetricCategory.GENERATIVE_MULTI_TURN:
+                    metric_fn_args["lm"] = self.model
+
+                outputs = metric_function(**metric_fn_args)
 
                 for output, doc, response in zip(outputs, docs, responses):
                     self.evaluation_tracker.metrics_logger.log(task_name, output)
