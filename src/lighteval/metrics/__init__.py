@@ -23,6 +23,7 @@
 import numpy as np
 
 from lighteval.metrics.metrics import Metric, MetricCategory
+from lighteval.models.abstract_model import LightevalModel
 from lighteval.models.model_output import ModelResponse
 from lighteval.tasks.requests import Doc
 from lighteval.utils.utils import as_list
@@ -200,6 +201,53 @@ def apply_generative_metric(  # noqa: C901
                     formatted_doc=formatted_doc,
                 )
             )
+        outputs.append(output)
+
+    return outputs
+
+
+def apply_generative_multi_turn_metric(
+    sample_ids: list[str],
+    responses: list[list[ModelResponse]],
+    formatted_docs: list[Doc],
+    metrics: list[Metric],
+    lm: "LightevalModel",
+):
+    outputs = []
+
+    for sample_id, results, formatted_doc in zip(sample_ids, responses, formatted_docs):
+        output = {}
+
+        # Extracting gold
+        try:
+            golds = formatted_doc.get_golds()
+        except (KeyError, IndexError):
+            golds = None
+
+        # Post processing prediction
+        if len(results) > 1:
+            # In case of sampling, it's a list of one list of n samples
+            raise Exception("You returned more than one result for a sample with a generative metric.")
+        results = results[0]
+
+        # Post processing prediction
+        preds_raw = as_list(results.result)
+        preds = []
+
+        for pred_raw in preds_raw:
+            pred = pred_raw
+            preds.append(pred)
+
+        for metric in metrics:
+            if metric.category == MetricCategory.GENERATIVE_MULTI_TURN:
+                output.update(
+                    metric.compute(
+                        golds=golds,
+                        predictions=preds,
+                        formatted_doc=formatted_doc,
+                        lm=lm,
+                    )
+                )
         outputs.append(output)
 
     return outputs

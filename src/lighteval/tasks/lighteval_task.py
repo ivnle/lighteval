@@ -35,6 +35,7 @@ from pytablewriter import MarkdownTableWriter
 from lighteval.metrics import (
     apply_generative_best_of_n_metric,
     apply_generative_metric,
+    apply_generative_multi_turn_metric,
     apply_llm_as_judge_metric,
     apply_multichoice_metric,
     apply_multichoice_metric_one_token,
@@ -424,6 +425,7 @@ class LightevalTask:
         if (
             self.has_metric_category[MetricCategory.GENERATIVE]
             or self.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]
+            or self.has_metric_category[MetricCategory.GENERATIVE_MULTI_TURN]
         ):
             use_logits = self.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]
             requests[RequestType.GREEDY_UNTIL] += [
@@ -443,6 +445,7 @@ class LightevalTask:
                         for c in [
                             MetricCategory.GENERATIVE,
                             MetricCategory.GENERATIVE_LOGPROB,
+                            MetricCategory.GENERATIVE_MULTI_TURN,
                         ]
                         if self.has_metric_category[c]
                     ],
@@ -548,6 +551,8 @@ class LightevalTask:
             return apply_perplexity_metric
         if metric_category == MetricCategory.GENERATIVE_BEST_OF_N:
             return apply_generative_best_of_n_metric
+        if metric_category == MetricCategory.GENERATIVE_MULTI_TURN:
+            return apply_generative_multi_turn_metric
         if metric_category in [
             MetricCategory.GENERATIVE,
             MetricCategory.GENERATIVE_SAMPLING,
