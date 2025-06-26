@@ -20,6 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import json
 import re
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -92,7 +93,18 @@ class IndicesExtractionConfig:
     try_extract_without_anchor: bool = True
 
 
-ExtractionTarget = LatexExtractionConfig | ExprExtractionConfig | IndicesExtractionConfig
+@dataclass(frozen=True)
+class JsonExtractionConfig:
+    """Config for extracting answers from a JSON object.
+
+    Attributes:
+        answer_path (list[str]): A list of keys to traverse to find the answer.
+    """
+
+    answer_path: list[str]
+
+
+ExtractionTarget = LatexExtractionConfig | ExprExtractionConfig | IndicesExtractionConfig | JsonExtractionConfig
 
 
 # All of the regexes are cached, to avoid repeated compiling during processing of same task
@@ -346,18 +358,28 @@ def lazy_indices_regex(
 def get_extraction_regexes(
     formatted_doc: Doc, target_types: Sequence[ExtractionTarget], language: Language
 ) -> list[tuple[list[tuple[re.Pattern[str], int]], ExtractionTarget]]:
-    extraction_regexes: list[tuple[list[tuple[re.Pattern[str], int]], ExtractionTarget]] = [
-        (lazy_latex_regex(target_type, language), target_type)
-        if isinstance(target_type, LatexExtractionConfig)
-        else (lazy_expr_regex(target_type, language), target_type)
-        if isinstance(target_type, ExprExtractionConfig)
-        else (lazy_indices_regex(target_type, len(formatted_doc.choices), language), target_type)
-        for target_type in target_types
-    ]
+    extraction_regexes: list[tuple[list[tuple[re.Pattern[str], int]], ExtractionTarget]] = []
+    for target_type in target_types:
+        if isinstance(target_type, LatexExtractionConfig):
+            regexes = lazy_latex_regex(target_type, language)
+        elif isinstance(target_type, ExprExtractionConfig):
+            regexes = lazy_expr_regex(target_type, language)
+        elif isinstance(target_type, IndicesExtractionConfig):
+            regexes = lazy_indices_regex(target_type, len(formatted_doc.choices), language)
+        elif isinstance(target_type, JsonExtractionConfig):
+            # JSON extraction doesn't use regexes, so we pass an empty list.
+            # The presence of the config object is the signal.
+            regexes = []
+        else:
+            # This should not be reached with proper typing, but as a safeguard:
+            continue
+        extraction_regexes.append((regexes, target_type))
 
-    # Sort the extraction res so that order is indices, latex, expr
+    # Sort the extraction res so that order is json, indices, latex, expr
     def get_target_type_order(target_type: ExtractionTarget) -> int:
         match target_type:
+            case JsonExtractionConfig():
+                return -1
             case IndicesExtractionConfig():
                 return 0
             case LatexExtractionConfig():
@@ -505,6 +527,20 @@ def extract_indices(
     return normalize_index(match.group("indices")), normalize_index(match.group("indices"))
 
 
+def extract_json(pred_string: str, config: JsonExtractionConfig) -> tuple[Any | None, str]:
+    """Tries to parse a string as JSON and extract a value from a specified path."""
+    try:
+        data = json.loads(pred_string)
+        value = data
+        for key in config.answer_path:
+            value = value[key]
+        # The value could be a number, string, etc. We need its string representation for the fallback.
+        return value, str(value)
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        # Return None on any failure (bad JSON, path not found, etc.)
+        return None, pred_string
+
+
 def extract_match(
     match: re.Match, target_type: ExtractionTarget, timeout_seconds: int
 ) -> tuple[Basic | MatrixBase | str | None, str]:
@@ -552,13 +588,24 @@ def extract_target_from_pred(
     Returns:
         list: List of extracted predictions, with first fallbac string appended if fallback_mode is "first_match"
     """
+    # High-priority check for JSON targets.
+    json_configs = [cfg for _, cfg in target_res if isinstance(cfg, JsonExtractionConfig)]
+    if json_configs:
+        extracted_value, _ = extract_json(pred, json_configs[0])
+        if extracted_value is not None:
+            # If JSON parsing is successful, we assume it's the intended format and return immediately.
+            return [extracted_value]
+
+    # If JSON parsing fails or isn't requested, proceed with the existing regex logic.
+    regex_target_res = [item for item in target_res if not isinstance(item[1], JsonExtractionConfig)]
+
     extracted_predictions = []
     fallbacks = []
 
     # Get all patterns and sort by priority
     all_patterns = [
         (pattern, target_type, priority)
-        for target_patterns, target_type in target_res
+        for target_patterns, target_type in regex_target_res
         for pattern, priority in target_patterns
     ]
     match_found = False
