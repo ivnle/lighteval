@@ -374,7 +374,8 @@ class VLLMModel(LightevalModel):
             # but then tensor_parallel breaks
             # Hynek: With the newest vllm, it actually breaks when tensor_parallel_size == 1 and num_gpus not set,
             # as VLLM complains about no GPUs available.
-            @ray.remote(num_gpus=1 if self.tensor_parallel_size == 1 else None)
+            # @ray.remote(num_gpus=1 if self.tensor_parallel_size == 1 else None)
+            @ray.remote(num_gpus=self.tensor_parallel_size) # this change lets us combine tensor/data parallel
             def run_inference_one_model(model_args: dict, sampling_params: SamplingParams, requests):
                 llm = LLM(**model_args)
                 return llm.generate(prompt_token_ids=requests, sampling_params=sampling_params)
