@@ -373,6 +373,7 @@ class DetailsLogger:
             detail.gold = doc.get_golds()
             # The `metrics` dict contains our special keys. We pop them so they don't get saved twice.
             detail.predictions = [metrics.pop("prediction", "")]  # Override with just the chosen one
+            detail.cont_tokens = [metrics.pop("best_cont_tokens", [])]  # Override with just the best one
             detail.best_of_n_scores = metrics.pop("best_of_n_scores", {})
             pred_saved = True
         if task.has_metric_category[MetricCategory.GENERATIVE_LOGPROB]:

@@ -130,6 +130,7 @@ def apply_generative_best_of_n_metric(
         best_sample_index = np.argmax(avg_logprobs)
         # Select the single best prediction
         best_prediction_text = preds_raw[best_sample_index]
+        best_cont_tokens = generated_tokens[best_sample_index]
 
         # Create summary statistics for the scores
         summary_stats = {
@@ -153,6 +154,7 @@ def apply_generative_best_of_n_metric(
         # Add metadata for the logger
         output["prediction"] = best_prediction_text
         output["best_of_n_scores"] = summary_stats
+        output["best_cont_tokens"] = best_cont_tokens
 
         outputs.append(output)
 
