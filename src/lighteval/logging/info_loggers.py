@@ -366,6 +366,7 @@ class DetailsLogger:
         if (
             task.has_metric_category[MetricCategory.GENERATIVE]
             or task.has_metric_category[MetricCategory.GENERATIVE_SAMPLING]
+            or task.has_metric_category[MetricCategory.GENERATIVE_MULTI_TURN]
         ):
             detail.gold = doc.get_golds()
             pred_saved = True

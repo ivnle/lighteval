@@ -113,6 +113,17 @@ class ReasonThenFormatMetric:
             constrained_response_str = output.outputs[0].text
             doc = formatted_docs[i]
 
+            # Add the full conversation to the doc for detailed logging
+            unconstrained_response = responses[i][0].result[0]
+            if doc.specific is None:
+                doc.specific = {}
+            doc.specific["multi_turn_conversation"] = {
+                "prompt_1_reason": doc.query,
+                "response_1_reason": unconstrained_response,
+                "prompt_2_format": second_turn_prompts[i],
+                "response_2_format": constrained_response_str,
+            }
+
             final_score_dict = final_eval_metric.compute(
                 golds=doc.get_golds(), predictions=[constrained_response_str], formatted_doc=doc
             )
