@@ -113,7 +113,7 @@ class ReasonThenFormatMetric:
             constrained_response_str = output.outputs[0].text
             doc = formatted_docs[i]
 
-            final_score_dict = final_eval_metric.sample_level_fn(
+            final_score_dict = final_eval_metric.compute(
                 golds=doc.get_golds(), predictions=[constrained_response_str], formatted_doc=doc
             )
 
