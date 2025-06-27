@@ -12,7 +12,7 @@
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 # AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
@@ -213,41 +213,32 @@ def apply_generative_multi_turn_metric(
     metrics: list[Metric],
     lm: "LightevalModel",
 ):
-    outputs = []
+    """
+    Apply a batch-aware generative multi-turn metric.
+    This function calls the metric once with the full batch of samples.
+    The metric is responsible for handling the batch logic.
+    """
+    outputs_per_metrics: list[list[dict]] = []
 
-    for sample_id, results, formatted_doc in zip(sample_ids, responses, formatted_docs):
-        output = {}
-
-        # Extracting gold
-        try:
-            golds = formatted_doc.get_golds()
-        except (KeyError, IndexError):
-            golds = None
-
-        # Post processing prediction
-        if len(results) > 1:
-            # In case of sampling, it's a list of one list of n samples
-            raise Exception("You returned more than one result for a sample with a generative metric.")
-        results = results[0]
-
-        # Post processing prediction
-        preds_raw = as_list(results.result)
-        preds = []
-
-        for pred_raw in preds_raw:
-            pred = pred_raw
-            preds.append(pred)
-
-        for metric in metrics:
-            if metric.category == MetricCategory.GENERATIVE_MULTI_TURN:
-                output.update(
-                    metric.compute(
-                        golds=golds,
-                        predictions=preds,
-                        formatted_doc=formatted_doc,
-                        lm=lm,
-                    )
+    for metric in metrics:
+        if metric.category == MetricCategory.GENERATIVE_MULTI_TURN:
+            # The compute method will return a list of dicts, one for each sample
+            outputs_per_metrics.append(
+                metric.compute(
+                    sample_ids=sample_ids,
+                    responses=responses,
+                    formatted_docs=formatted_docs,
+                    lm=lm,
                 )
+            )
+
+    # We merge the outputs per metric in a list of dict for each sample
+    # example: [{metric1_sample1, metric2_sample1}, {metric1_sample2, metric2_sample2}]
+    outputs = []
+    for i in range(len(sample_ids)):
+        output = {}
+        for metric_outputs in outputs_per_metrics:
+            output.update(metric_outputs[i])
         outputs.append(output)
 
     return outputs

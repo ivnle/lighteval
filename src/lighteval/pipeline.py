@@ -12,7 +12,7 @@
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 # AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
@@ -291,6 +291,9 @@ class Pipeline:
 
         self._compute_metrics(sample_id_to_responses)
 
+        # Cleaning up the model after running metrics
+        self.model.cleanup()
+
         if self.is_main_process():
             self.evaluation_tracker.general_config_logger.log_end_time()
             self.evaluation_tracker.metrics_logger.aggregate(task_dict=self.task_dict, bootstrap_iters=1000)
@@ -486,9 +489,6 @@ class Pipeline:
 
         else:
             sample_id_to_responses = self._run_model_sync()
-
-        # Cleaning up the model before running metrics
-        self.model.cleanup()
 
         return sample_id_to_responses
 

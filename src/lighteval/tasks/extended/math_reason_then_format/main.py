@@ -32,13 +32,14 @@ from lighteval.metrics.utils.extractive_match_utils import (
     JsonExtractionConfig,
     LatexExtractionConfig,
 )
-from lighteval.metrics.utils.metric_utils import MetricCategory, MetricUseCase, SampleLevelMetric
+from lighteval.metrics.utils.metric_utils import MetricCategory, MetricUseCase, SampleLevelMetricGrouping
 from lighteval.tasks.lighteval_task import LightevalTaskConfig
 from lighteval.tasks.requests import Doc
 from lighteval.utils.language import Language
 
 
 if TYPE_CHECKING:
+    from lighteval.models.model_output import ModelResponse
     from lighteval.models.vllm.vllm_model import VLLMModel
 
 
@@ -81,37 +82,47 @@ class ReasonThenFormatMetric:
     def __init__(self, cot_json_schema: dict):
         self._cot_json_schema = cot_json_schema
 
-    def compute(self, predictions: list[str], formatted_doc: Doc, lm: "VLLMModel", **kwargs) -> dict[str, float]:
+    def compute(
+        self, responses: list[list["ModelResponse"]], formatted_docs: list[Doc], lm: "VLLMModel", **kwargs
+    ) -> list[dict[str, float]]:
         """
-        Receives the unconstrained response, then calls the model again for a
-        constrained formatting turn, and finally evaluates the result.
+        Receives a batch of unconstrained responses, then calls the model again
+        for a constrained formatting turn, and finally evaluates the results.
         """
-        # 1. This is the response from the FIRST, unconstrained call.
-        unconstrained_response = predictions[0]
+        # 1. Prepare a batch of prompts for the second turn
+        second_turn_prompts = []
+        for sample_responses in responses:
+            # Each sample_responses is a list, for generative it's usually of length 1
+            unconstrained_response = sample_responses[0].result[0]
+            reformat_prompt = (
+                f"Here is a reasoning answer:\n\n{unconstrained_response}\n\n"
+                f"Please reformat this answer into a JSON object that follows this schema:\n"
+                f"{json.dumps(self._cot_json_schema)}"
+            )
+            second_turn_prompts.append(reformat_prompt)
 
-        # 2. Prepare the prompt for the SECOND, constrained call.
-        reformat_prompt = (
-            f"Here is a reasoning answer:\n\n{unconstrained_response}\n\n"
-            f"Please reformat this answer into a JSON object that follows this schema:\n"
-            f"{json.dumps(self._cot_json_schema)}"
-        )
-
-        # 3. Make the second, constrained call to the vLLM model.
-        tokenized_prompt = lm.tok_encode(reformat_prompt)
+        # 2. Make one batched call for the second, constrained turn
+        tokenized_prompts = [lm.tok_encode(p) for p in second_turn_prompts]
         vllm_outputs = lm._generate(
-            inputs=[tokenized_prompt], max_new_tokens=512, guided_decoding={"json": self._cot_json_schema}
-        )
-        constrained_response_str = vllm_outputs[0].outputs[0].text
-
-        # 4. Evaluate the final, constrained response using the predefined metric logic.
-        final_score_dict = final_eval_metric.sample_level_fn(
-            golds=formatted_doc.get_golds(), predictions=[constrained_response_str], formatted_doc=formatted_doc
+            inputs=tokenized_prompts, max_new_tokens=512, guided_decoding={"json": self._cot_json_schema}
         )
 
-        # The metric returns a dict, e.g., {"extractive_match@1": 1.0}. We rename it for clarity.
-        final_score = list(final_score_dict.values())[0] if final_score_dict else 0.0
+        # 3. Evaluate the batch of results
+        final_scores = []
+        for i, output in enumerate(vllm_outputs):
+            constrained_response_str = output.outputs[0].text
+            doc = formatted_docs[i]
 
-        return {"reason_then_format_accuracy": final_score}
+            final_score_dict = final_eval_metric.sample_level_fn(
+                golds=doc.get_golds(), predictions=[constrained_response_str], formatted_doc=doc
+            )
+
+            # The metric returns a dict, e.g., {"extractive_match@1": 1.0}. We rename it for clarity.
+            final_score = list(final_score_dict.values())[0] if final_score_dict else 0.0
+
+            final_scores.append({"reason_then_format_accuracy": final_score})
+
+        return final_scores
 
 
 # Instantiate the orchestrator metric
@@ -147,13 +158,13 @@ math_500_reason_then_format = create_math_500(
     prompt_function=math_prompt_fn_basic,  # Use the basic prompt for the first (unconstrained) turn
     guided_decoding=None,  # Ensure the first turn is unconstrained
     metric=[
-        SampleLevelMetric(
-            metric_name="reason_then_format_accuracy",
+        SampleLevelMetricGrouping(
+            metric_name=["reason_then_format_accuracy"],
             category=MetricCategory.GENERATIVE_MULTI_TURN,  # Use our new category
             use_case=MetricUseCase.REASONING,
             sample_level_fn=reason_then_format_metric_instance.compute,  # Point to our orchestrator metric
-            corpus_level_fn=np.mean,
-            higher_is_better=True,
+            corpus_level_fn={"reason_then_format_accuracy": np.mean},
+            higher_is_better={"reason_then_format_accuracy": True},
         )
     ],
 )
