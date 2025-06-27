@@ -571,38 +571,55 @@ def extract_target_from_pred(
     extraction_mode: Literal["first_match", "any_match"] = "any_match",
     timeout_seconds: int = 5,
 ):
-    """Extracts targets from a prediction string using regex patterns.
-    Returns first sucesffuly extracted match.
+    """Extracts targets from a prediction string using a multi-step process.
+
+    This function first attempts to parse the prediction as JSON if a `JsonExtractionConfig`
+    is provided. If successful, it may use the extracted content for further regex-based
+    extraction. If JSON parsing fails or is not configured, it proceeds with regex
+    extraction on the original prediction.
 
     Args:
-        pred (str): The prediction string to extract from
-        target_res (list[tuple[list[tuple[re.Pattern[str], int]], ExtractionTarget]]): List of regex patterns and their priorities for each target type
-        fallback_mode (Literal["no_fallback", "first_match"], optional): How to handle extraction failures. Defaults to "no_fallback".
-            - "no_fallback": Return only successfully parsed match
-            - "first_match": Additionaly Include the first string match no matter how parsing finished
-        extraction_mode (Literal["first_match", "any_match"], optional): How to handle extraction failures. Defaults to "any_match".
-            - "first_match": Only tries to extract the first match
-            - "any_match": Tries to extract any match
-        timeout_seconds (int, optional): Maximum time in seconds to spend parsing each expression. Defaults to 5.
+        pred (str): The prediction string to extract from.
+        target_res (list[tuple[list[tuple[re.Pattern[str], int]], ExtractionTarget]]):
+            List of regex patterns and their priorities for each target type.
+        fallback_mode (Literal["no_fallback", "first_match"], optional):
+            How to handle extraction failures. Defaults to "no_fallback".
+            - "no_fallback": Return only successfully parsed matches.
+            - "first_match": Additionally include the first string match if parsing fails.
+        extraction_mode (Literal["first_match", "any_match"], optional):
+            How to handle multiple regex matches. Defaults to "any_match".
+            - "first_match": Only try to extract from the first regex match found.
+            - "any_match": Try to extract from any regex match.
+        timeout_seconds (int, optional):
+            Maximum time in seconds to spend parsing each expression. Defaults to 5.
 
     Returns:
-        list: List of extracted predictions, with first fallbac string appended if fallback_mode is "first_match"
+        list: A list of extracted and parsed candidate answers.
     """
-    # High-priority check for JSON targets.
+    extracted_predictions = []
+    string_to_process = pred
+    json_extracted_string_fallback = None
+
+    # Handle JSON extraction as a potential pre-processing step
     json_configs = [cfg for _, cfg in target_res if isinstance(cfg, JsonExtractionConfig)]
     if json_configs:
-        extracted_value, _ = extract_json(pred, json_configs[0])
+        extracted_value, extracted_string = extract_json(pred, json_configs[0])
         if extracted_value is not None:
-            # If JSON parsing is successful, we assume it's the intended format and return immediately.
-            return [extracted_value]
+            if isinstance(extracted_value, str):
+                # If the extracted value is a string, use it for further processing.
+                string_to_process = extracted_value
+                json_extracted_string_fallback = extracted_string
+            else:
+                # If it's not a string (e.g., a number), it's a final candidate answer.
+                extracted_predictions.append(extracted_value)
+                # `string_to_process` remains the original `pred` for fallback regex attempts.
 
-    # If JSON parsing fails or isn't requested, proceed with the existing regex logic.
+    # Proceed with regex-based extraction on the (potentially modified) string
     regex_target_res = [item for item in target_res if not isinstance(item[1], JsonExtractionConfig)]
 
-    extracted_predictions = []
+    regex_extracted_predictions = []
     fallbacks = []
 
-    # Get all patterns and sort by priority
     all_patterns = [
         (pattern, target_type, priority)
         for target_patterns, target_type in regex_target_res
@@ -610,19 +627,15 @@ def extract_target_from_pred(
     ]
     match_found = False
 
-    # Group patterns by priority using itertools.groupby
     for _, patterns_group in groupby(sorted(all_patterns, key=lambda x: x[2]), key=lambda x: x[2]):
-        # Find all matches for each pattern in this priority group
         matches_with_pos = (
             (match, match.start(), match.end(), target_type)
             for pattern, target_type, _ in patterns_group
-            for match in pattern.finditer(pred)
+            for match in pattern.finditer(string_to_process)
         )
 
-        # Sort matches by end position (rightmost first) and then by start position (leftmost first)
         matches_with_pos = sorted(matches_with_pos, key=lambda x: (x[2], -x[1]), reverse=True)
 
-        # Try to extract from each match, starting from rightmost
         for match, _, _, target_type in matches_with_pos:
             extracted_match, str_fallback = extract_match(match, target_type, timeout_seconds)
             match_found = True
@@ -631,17 +644,23 @@ def extract_target_from_pred(
                 fallbacks.append(str_fallback)
 
             if extracted_match is not None:
-                extracted_predictions.append(extracted_match)
+                regex_extracted_predictions.append(extracted_match)
                 break
 
             if extraction_mode == "first_match":
                 break
 
-        # If we found something and we're in first_match mode, stop processing other priorities
-        if extracted_predictions or (match_found and extraction_mode == "first_match"):
+        if regex_extracted_predictions or (match_found and extraction_mode == "first_match"):
             break
 
-    if fallback_mode == "first_match" and fallbacks:
-        extracted_predictions += [fallbacks[0]]
+    # Combine results from JSON and regex extraction
+    extracted_predictions.extend(regex_extracted_predictions)
+
+    # Handle fallback logic
+    if fallback_mode == "first_match":
+        if json_extracted_string_fallback:
+            extracted_predictions.append(json_extracted_string_fallback)
+        elif fallbacks:
+            extracted_predictions.append(fallbacks[0])
 
     return extracted_predictions
