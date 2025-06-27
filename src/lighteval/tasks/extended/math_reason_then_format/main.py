@@ -34,7 +34,7 @@ from lighteval.metrics.utils.extractive_match_utils import (
 )
 from lighteval.metrics.utils.metric_utils import MetricCategory, MetricUseCase, SampleLevelMetricGrouping
 from lighteval.tasks.lighteval_task import LightevalTaskConfig
-from lighteval.tasks.requests import Doc
+from lighteval.tasks.requests import Doc, LoglikelihoodRequest
 from lighteval.utils.language import Language
 
 
@@ -127,6 +127,39 @@ class ReasonThenFormatMetric:
         for i, output in enumerate(vllm_outputs):
             constrained_response_str = output.outputs[0].text
             doc = formatted_docs[i]
+
+            # Calculate the log probability of the final response conditioned on the initial prompt.
+            # This makes it comparable to the logprobs from single-turn metrics like best-of-n.
+            try:
+                logprob_request = LoglikelihoodRequest(
+                    context=doc.ctx,  # Use the fully formatted prompt with chat template
+                    choice=constrained_response_str,
+                    task_name="ad_hoc_scoring",
+                    sample_index=i,
+                    request_index=0,
+                    metric_categories=[],
+                )
+
+                # This is a synchronous call to the model's loglikelihood method
+                logprob_responses = lm.loglikelihood([logprob_request])
+
+                comparable_logprob = None
+                if logprob_responses:
+                    # The .result is a tuple: (logprob_sum, bool_score)
+                    comparable_logprob = logprob_responses[0].result[0]
+
+                if doc.specific is None:
+                    doc.specific = {}
+                doc.specific["comparable_logprob"] = comparable_logprob
+            except Exception as e:
+                # Log any error during this ad-hoc scoring but don't crash the evaluation
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Could not compute comparable_logprob for sample {i}: {e}")
+                if doc.specific is None:
+                    doc.specific = {}
+                doc.specific["comparable_logprob"] = None
 
             # Add the full conversation to the doc for detailed logging
             full_conversation = chat_histories_for_turn_2[i] + [{"role": "assistant", "content": constrained_response_str}]
