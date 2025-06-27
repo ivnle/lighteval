@@ -89,20 +89,35 @@ class ReasonThenFormatMetric:
         Receives a batch of unconstrained responses, then calls the model again
         for a constrained formatting turn, and finally evaluates the results.
         """
-        # 1. Prepare a batch of prompts for the second turn
-        second_turn_prompts = []
-        for sample_responses in responses:
-            # Each sample_responses is a list, for generative it's usually of length 1
-            unconstrained_response = sample_responses[0].result[0]
-            reformat_prompt = (
-                f"Here is a reasoning answer:\n\n{unconstrained_response}\n\n"
-                f"Please reformat this answer into a JSON object that follows this schema:\n"
-                f"{json.dumps(self._cot_json_schema)}"
+        # 1. Prepare a batch of prompts for the second turn using chat templates
+        second_turn_prompts_as_strings = []
+        chat_histories_for_turn_2 = []
+
+        for i, sample_responses in enumerate(responses):
+            doc = formatted_docs[i]
+            # P1: The initial user prompt (the math problem)
+            prompt_1 = doc.query
+            # R1: The model's first, unconstrained response
+            response_1 = sample_responses[0].result[0]
+            # P2: The user's follow-up request for formatting
+            prompt_2 = f"Please reformat your previous answer into a JSON object that follows this schema:\n{json.dumps(self._cot_json_schema)}"
+
+            # Build the chat history for the second turn's prompt
+            chat_history = [
+                {"role": "user", "content": prompt_1},
+                {"role": "assistant", "content": response_1},
+                {"role": "user", "content": prompt_2},
+            ]
+            chat_histories_for_turn_2.append(chat_history)
+
+            # Apply the template to create the final prompt string
+            final_prompt_string = lm.tokenizer.apply_chat_template(
+                chat_history, tokenize=False, add_generation_prompt=True
             )
-            second_turn_prompts.append(reformat_prompt)
+            second_turn_prompts_as_strings.append(final_prompt_string)
 
         # 2. Make one batched call for the second, constrained turn
-        tokenized_prompts = [lm.tok_encode(p) for p in second_turn_prompts]
+        tokenized_prompts = [lm.tok_encode(p) for p in second_turn_prompts_as_strings]
         vllm_outputs = lm._generate(
             inputs=tokenized_prompts, max_new_tokens=512, guided_decoding={"json": self._cot_json_schema}
         )
@@ -114,15 +129,10 @@ class ReasonThenFormatMetric:
             doc = formatted_docs[i]
 
             # Add the full conversation to the doc for detailed logging
-            unconstrained_response = responses[i][0].result[0]
+            full_conversation = chat_histories_for_turn_2[i] + [{"role": "assistant", "content": constrained_response_str}]
             if doc.specific is None:
                 doc.specific = {}
-            doc.specific["multi_turn_conversation"] = {
-                "prompt_1_reason": doc.query,
-                "response_1_reason": unconstrained_response,
-                "prompt_2_format": second_turn_prompts[i],
-                "response_2_format": constrained_response_str,
-            }
+            doc.specific["multi_turn_conversation"] = full_conversation
 
             final_score_dict = final_eval_metric.compute(
                 golds=doc.get_golds(), predictions=[constrained_response_str], formatted_doc=doc
