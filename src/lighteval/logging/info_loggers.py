@@ -210,7 +210,7 @@ class DetailsLogger:
         padded: list = field(default_factory=list)
         gold: list = field(default_factory=list)
         pred_logits: list = field(default_factory=list)
-        best_of_n_scores: dict = field(default_factory=dict)
+        best_of_n_scores: dict | None = None
         choices: list = field(default_factory=list)
         gold_index: list = field(default_factory=list)
         metrics: dict = field(default_factory=dict)
