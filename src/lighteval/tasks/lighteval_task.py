@@ -438,7 +438,7 @@ class LightevalTask:
                     generation_size=self.generation_size,
                     generation_grammar=self.generation_grammar,
                     guided_decoding=self.guided_decoding,
-                    num_samples=1,
+                    num_samples=max(self.num_samples) if self.has_metric_category[MetricCategory.GENERATIVE_MULTI_TURN] else 1,
                     use_logits=use_logits,
                     metric_categories=[
                         c
