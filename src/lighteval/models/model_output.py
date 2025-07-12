@@ -61,6 +61,10 @@ class LoglikelihoodSingleTokenResponse(ModelResponse):
 class GenerativeResponse(ModelResponse):
     result: list[str] = field(default_factory=str)  # generated text continuation
     logits: Optional[list[float]] = None  # Generated text logits
+    # Importance sampling fields (available when using vLLM V1 with importance sampling)
+    importance_log_weights: Optional[list[float]] = None
+    cumulative_logprobs: Optional[list[float]] = None
+    unconstrained_cumulative_logprobs: Optional[list[float]] = None
 
     def get_result_for_eval(self):
         return self.result

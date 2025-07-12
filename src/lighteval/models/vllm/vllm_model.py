@@ -323,11 +323,31 @@ class VLLMModel(LightevalModel):
                 result = [output.text for output in vllm_output.outputs]
                 input_token_ids = vllm_output.prompt_token_ids
 
+                # Extract importance sampling fields (if available with vLLM V1)
+                importance_log_weights = []
+                cumulative_logprobs = []
+                unconstrained_cumulative_logprobs = []
+                
+                for output in vllm_output.outputs:
+                    # Check if importance sampling fields exist
+                    if hasattr(output, 'importance_log_weight'):
+                        importance_log_weights.append(output.importance_log_weight)
+                        cumulative_logprobs.append(output.cumulative_logprob)
+                        unconstrained_cumulative_logprobs.append(output.unconstrained_cumulative_logprob)
+                    else:
+                        importance_log_weights.append(None)
+                        cumulative_logprobs.append(None)
+                        unconstrained_cumulative_logprobs.append(None)
+
                 cur_response = GenerativeResponse(
                     result=result,
                     logits=processed_logprobs,
                     generated_tokens=list(output_token_ids),
                     input_tokens=input_token_ids,
+                    # Add importance sampling fields if any are non-None
+                    importance_log_weights=importance_log_weights if any(w is not None for w in importance_log_weights) else None,
+                    cumulative_logprobs=cumulative_logprobs if any(w is not None for w in cumulative_logprobs) else None,
+                    unconstrained_cumulative_logprobs=unconstrained_cumulative_logprobs if any(w is not None for w in unconstrained_cumulative_logprobs) else None,
                 )
                 results.append(cur_response)
 
