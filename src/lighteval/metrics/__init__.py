@@ -125,7 +125,8 @@ def apply_generative_best_of_n_metric(
             if num_tokens == 0:
                 avg_logprobs.append(float("-inf"))
             else:
-                avg_logprobs.append(sum(logprobs) / num_tokens)
+                # avg_logprobs.append(sum(logprobs) / num_tokens)
+                avg_logprobs.append(sum(logprobs))
 
         # Find the index of the prediction with the highest average log probability
         best_sample_index = np.argmax(avg_logprobs)

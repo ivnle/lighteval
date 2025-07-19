@@ -49,6 +49,74 @@ from lighteval.utils.utils import obj_to_markdown
 
 logger = logging.getLogger(__name__)
 
+
+# Unicode sanitization tracking
+_unicode_issues_count = 0
+_unicode_affected_samples = set()
+
+
+def sanitize_string(text, context=""):
+    """Remove or replace problematic Unicode characters with logging."""
+    global _unicode_issues_count
+    if not isinstance(text, str):
+        return text
+    
+    try:
+        # This will raise UnicodeEncodeError if there are surrogates
+        text.encode('utf-8')
+        return text
+    except UnicodeEncodeError as e:
+        _unicode_issues_count += 1
+        
+        # Sanitize the text
+        sanitized = text.encode('utf-8', errors='surrogatepass').decode('utf-8', errors='replace')
+        
+        # Log the issue
+        logger.warning(
+            f"Unicode sanitization required in {context}: {repr(text[:50])}... "
+            f"(error: {e})"
+        )
+        
+        return sanitized
+
+
+def sanitize_dataclass(obj, base_context=""):
+    """Recursively sanitize strings in a dataclass object with path tracking."""
+    global _unicode_affected_samples
+    
+    if not is_dataclass(obj):
+        return obj
+    
+    # Track if this sample has issues
+    sample_has_issues = False
+    
+    # Get the dict representation
+    data = asdict(obj)
+    
+    # Recursively sanitize all string values
+    def sanitize_dict(d, path=""):
+        nonlocal sample_has_issues
+        
+        if isinstance(d, dict):
+            return {k: sanitize_dict(v, f"{path}.{k}" if path else k) for k, v in d.items()}
+        elif isinstance(d, list):
+            return [sanitize_dict(item, f"{path}[{i}]") for i, item in enumerate(d)]
+        elif isinstance(d, str):
+            original = d
+            sanitized = sanitize_string(d, f"{base_context}{path}")
+            if original != sanitized:
+                sample_has_issues = True
+            return sanitized
+        else:
+            return d
+    
+    result = sanitize_dict(data)
+    
+    if sample_has_issues and base_context:
+        _unicode_affected_samples.add(base_context)
+    
+    return result
+
 if is_nanotron_available():
     from nanotron.config import GeneralArgs  # type: ignore
 
@@ -216,10 +284,22 @@ class EvaluationTracker:
         }
 
         # Create the details datasets for later upload
+        global _unicode_issues_count, _unicode_affected_samples
         details_datasets: dict[str, Dataset] = {}
+        
+        # Reset Unicode tracking for this save operation
+        _unicode_issues_count = 0
+        _unicode_affected_samples = set()
+        
         for task_name, task_details in self.details_logger.details.items():
-            # Create a dataset from the dictionary - we force cast to str to avoid formatting problems for nested objects
-            dataset = Dataset.from_list([asdict(detail) for detail in task_details])
+            # Create a dataset from the dictionary with Unicode sanitization
+            sanitized_details = []
+            for idx, detail in enumerate(task_details):
+                context = f"{task_name}[{idx}]"
+                sanitized_detail = sanitize_dataclass(detail, context)
+                sanitized_details.append(sanitized_detail)
+            
+            dataset = Dataset.from_list(sanitized_details)
 
             # We don't keep 'id' around if it's there
             column_names = dataset.column_names
@@ -229,6 +309,26 @@ class EvaluationTracker:
             # Sort column names to make it easier later
             dataset = dataset.select_columns(sorted(column_names))
             details_datasets[task_name] = dataset
+
+        # Log Unicode sanitization summary if any issues were found
+        if _unicode_issues_count > 0:
+            logger.warning(
+                f"Unicode sanitization summary: {_unicode_issues_count} issues found "
+                f"across {len(_unicode_affected_samples)} samples. "
+                f"See warnings above for details."
+            )
+            
+            # Save detailed Unicode diagnostics
+            unicode_log_path = Path(self.output_dir) / f"unicode_diagnostics_{date_id}.txt"
+            with open(unicode_log_path, 'w') as f:
+                f.write(f"Unicode Sanitization Report\n")
+                f.write(f"===========================\n")
+                f.write(f"Total issues found: {_unicode_issues_count}\n")
+                f.write(f"Affected samples: {len(_unicode_affected_samples)}\n")
+                f.write(f"\nAffected sample IDs:\n")
+                for sample_id in sorted(_unicode_affected_samples):
+                    f.write(f"  - {sample_id}\n")
+            logger.info(f"Unicode diagnostics saved to {unicode_log_path}")
 
         # We save results at every case
         self.save_results(date_id, results_dict)

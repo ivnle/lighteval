@@ -323,12 +323,45 @@ def lazy_indices_regex(
         final_answer_prefixed_re = rf"(?i:final answer is)\:?\s*{indice_str_re}\.?\s?I hope"
         # To allow stuff like "final answer is to your question"
         final_answer_prefixed_just_is = rf"(?i:final answer.{{0,100}}?)\s+is\:?\s*{indice_str_re}"
+        
+        # High-priority patterns for modern model output formats
+        # These handle common formats like "**Correct Answer: D)" that many models use
+        model_answer_patterns = [
+            # LaTeX boxed patterns - highest priority
+            (rf"\\boxed{{.*?{indice_str_re}.*?}}", 10),  # \boxed{A} or \boxed{text{A}}
+            (rf"\\boxed{{.*?\\text{{.*?{indice_str_re}.*?}}.*?}}", 15),  # \boxed{\text{A}}
+            
+            # Emoji + Final Answer patterns
+            (rf"✅.*?(?i:final\s+answer).*?[:：]\s*\**{indice_str_re}", 20),  # ✅ Final Answer: B or **B**
+            (rf"✅.*?{indice_str_re}", 25),  # ✅ followed by answer anywhere
+            
+            # Final Answer patterns (various formats)
+            (rf"(?i:final\s+answer).*?[:：]\s*\**{indice_str_re}\**", 30),  # Final Answer: **B**
+            (rf"\*\*.*?(?i:final\s+answer).*?[:：]\s*{indice_str_re}", 35),  # **Final Answer: B
+            (rf"#+.*?(?i:final\s+answer).*?[:：]\s*\**{indice_str_re}", 40),  # ### Final Answer: B
+            
+            # Correct Answer patterns
+            (rf"(?i:correct\s+answer).*?[:：]\s*\**{indice_str_re}", 45),  # Correct Answer: B
+            (rf"\*\*.*?(?i:correct\s+answer).*?[:：]\s*{indice_str_re}", 50),  # **Correct Answer: B
+            (rf"#+.*?(?i:correct\s+answer).*?[:：]\s*\**{indice_str_re}", 55),  # ### **Correct Answer: B
+            
+            # Pattern with parenthesis (existing patterns)
+            (rf"(?i:\*\*.*?answer.*?)\s*{indice_str_re}\)", 75),
+            (rf"(?i:✅.*?answer.*?)\s*{indice_str_re}\)", 76),
+            (rf"(?i:#+.*?answer.*?)\s*{indice_str_re}\)", 77),
+            (rf"(?i:answer.*?)\s*{indice_str_re}\)", 80),
+            
+            # Fallback - any letter followed by ) after word boundary  
+            (rf"\b{indice_str_re}\)", 85),
+        ]
+        
         regexes.extend(
             [
                 (final_answer_prefixed_re, 0),
                 (final_answer_prefixed_just_is, 50),
             ]
         )
+        regexes.extend(model_answer_patterns)
 
     regexes.extend(
         [
