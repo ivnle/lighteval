@@ -258,11 +258,11 @@ def multilingual_extractive_match_metric(
 
         # Assert on empty gold and warn on empty pred
         if any(len(g) == 0 for g in extracted_golds):
-            logger.warning(f"We did not manage to extract a gold in the correct format. Gold: {golds}")
+            logger.debug(f"We did not manage to extract a gold in the correct format. Gold: {golds}")
             extracted_golds = [[gold] for gold in golds]
 
         if all(len(p) == 0 for p in extracted_predictions):
-            logger.warning(
+            logger.debug(
                 f"We did not manage to extract a prediction in the correct format. Gold: {golds}, Pred: {predictions}"
             )
 
@@ -270,7 +270,7 @@ def multilingual_extractive_match_metric(
         try:
             add_to_specifics_with_timeout(formatted_doc, extracted_predictions, extracted_golds)
         except Exception:  # noqa: E722
-            logger.warning("Timeout when adding extracted predictions and golds to specific")
+            logger.debug("Timeout when adding extracted predictions and golds to specific")
 
         return aggregation_function(
             [
@@ -369,11 +369,11 @@ def multilingual_extractive_match_metric_bon(
 
         # Assert on empty gold and warn on empty pred
         if any(len(g) == 0 for g in extracted_golds):
-            logger.warning(f"We did not manage to extract a gold in the correct format. Gold: {golds}")
+            logger.debug(f"We did not manage to extract a gold in the correct format. Gold: {golds}")
             extracted_golds = [[gold] for gold in golds]
 
         if all(len(p) == 0 for p in extracted_predictions):
-            logger.warning(
+            logger.debug(
                 f"We did not manage to extract a prediction in the correct format. Gold: {golds}, Pred: {predictions}"
             )
 
@@ -381,7 +381,7 @@ def multilingual_extractive_match_metric_bon(
         try:
             add_to_specifics_with_timeout(formatted_doc, extracted_predictions, extracted_golds)
         except Exception:  # noqa: E722
-            logger.warning("Timeout when adding extracted predictions and golds to specific")
+            logger.debug("Timeout when adding extracted predictions and golds to specific")
 
         return aggregation_function(
             [
