@@ -560,8 +560,35 @@ def extract_indices(
     return normalize_index(match.group("indices")), normalize_index(match.group("indices"))
 
 
+def find_json_between_braces(text: str) -> str | None:
+    """Find JSON by looking for content between first { and last }.
+    
+    Simple and practical approach that works well for typical LLM outputs.
+    
+    Args:
+        text: The string to search for JSON
+        
+    Returns:
+        String between first { and last }, or None if not found
+    """
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    
+    if first_brace != -1 and last_brace != -1 and first_brace < last_brace:
+        return text[first_brace:last_brace + 1]
+    
+    return None
+
+
 def extract_json(pred_string: str, config: JsonExtractionConfig) -> tuple[Any | None, str]:
-    """Tries to parse a string as JSON and extract a value from a specified path."""
+    """Tries to parse a string as JSON and extract a value from a specified path.
+    
+    Extraction strategy:
+    1. First attempts to parse the entire string as JSON
+    2. Then looks for JSON in markdown code blocks
+    3. Finally searches for JSON between first { and last }
+    """
+    # Try full JSON parse first
     try:
         data = json.loads(pred_string)
         value = data
@@ -570,8 +597,40 @@ def extract_json(pred_string: str, config: JsonExtractionConfig) -> tuple[Any | 
         # The value could be a number, string, etc. We need its string representation for the fallback.
         return value, str(value)
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
-        # Return None on any failure (bad JSON, path not found, etc.)
-        return None, pred_string
+        pass
+    
+    # Try markdown code blocks
+    markdown_patterns = [
+        r'```json\s*\n?(.*?)\n?```',  # Explicit json block
+        r'```\s*\n?(.*?)\n?```',       # Generic code block
+    ]
+    
+    for pattern in markdown_patterns:
+        matches = re.findall(pattern, pred_string, re.DOTALL)
+        for match in matches:
+            try:
+                data = json.loads(match.strip())
+                value = data
+                for key in config.answer_path:
+                    value = value[key]
+                return value, str(value)
+            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+                continue
+    
+    # Try simple brace extraction
+    json_str = find_json_between_braces(pred_string)
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            value = data
+            for key in config.answer_path:
+                value = value[key]
+            return value, str(value)
+        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+            pass
+    
+    # No valid JSON found
+    return None, pred_string
 
 
 def extract_match(
